@@ -1,0 +1,13 @@
+{
+  "name": "figma-mcp-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.0.0",
+    "typescript": "^5.7.0"
+  }
+}

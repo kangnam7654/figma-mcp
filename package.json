@@ -1,0 +1,9 @@
+{
+  "name": "figma-mcp",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter mcp-server dev",
+    "test": "pnpm --filter mcp-server test"
+  }
+}

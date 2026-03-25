@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        color: #333;
+        padding: 12px;
+        background: #fff;
+      }
+      .header { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 12px;
+        padding: 8px;
+        border-radius: 6px;
+        background: #f5f5f5;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ccc;
+      }
+      .dot.connected { background: #0d9; }
+      .dot.disconnected { background: #e44; }
+      .field { margin-bottom: 8px; }
+      .field label {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+      }
+      .field input {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+        outline: none;
+      }
+      .field input:focus { border-color: #18a0fb; }
+      .channel-display {
+        padding: 8px;
+        background: #e8f4fe;
+        border-radius: 6px;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      .channel-display .label { font-size: 10px; color: #666; }
+      .channel-display .value {
+        font-size: 18px;
+        font-weight: 700;
+        font-family: monospace;
+        color: #18a0fb;
+        letter-spacing: 2px;
+        user-select: all;
+      }
+      button {
+        width: 100%;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #fff;
+        background: #18a0fb;
+      }
+      button:hover { background: #0d8ce9; }
+      button.disconnect { background: #e44; }
+      button.disconnect:hover { background: #c33; }
+      button:disabled { background: #ccc; cursor: not-allowed; }
+      .log {
+        margin-top: 12px;
+        max-height: 100px;
+        overflow-y: auto;
+        font-size: 10px;
+        color: #888;
+        font-family: monospace;
+        background: #fafafa;
+        padding: 6px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">Figma MCP Bridge</div>
+
+    <div class="status">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Disconnected</span>
+    </div>
+
+    <div id="connectForm">
+      <div class="field">
+        <label>WebSocket Port</label>
+        <input type="number" id="portInput" value="3055" />
+      </div>
+      <button id="connectBtn" onclick="doConnect()">Connect</button>
+    </div>
+
+    <div id="connectedView" style="display: none">
+      <div class="channel-display">
+        <div class="label">CHANNEL NAME</div>
+        <div class="value" id="channelName"></div>
+      </div>
+      <p style="font-size: 11px; color: #666; margin-bottom: 12px; text-align: center;">
+        Tell Claude to call <code>join_channel</code> with this name.
+      </p>
+      <button class="disconnect" onclick="doDisconnect()">Disconnect</button>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+      let ws = null;
+      let channel = null;
+
+      function generateChannel() {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < 8; i++) {
+          result += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return result;
+      }
+
+      function log(msg) {
+        const el = document.getElementById('log');
+        const time = new Date().toLocaleTimeString();
+        el.textContent = `[${time}] ${msg}\n` + el.textContent;
+      }
+
+      function setStatus(connected) {
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        dot.className = 'dot ' + (connected ? 'connected' : 'disconnected');
+        text.textContent = connected ? 'Connected' : 'Disconnected';
+
+        document.getElementById('connectForm').style.display = connected ? 'none' : 'block';
+        document.getElementById('connectedView').style.display = connected ? 'block' : 'none';
+      }
+
+      function doConnect() {
+        const port = document.getElementById('portInput').value || '3055';
+        channel = generateChannel();
+        document.getElementById('channelName').textContent = channel;
+
+        try {
+          ws = new WebSocket(`ws://localhost:${port}`);
+        } catch (err) {
+          log('Failed to create WebSocket: ' + err.message);
+          return;
+        }
+
+        ws.onopen = function () {
+          log('WebSocket connected');
+          ws.send(JSON.stringify({ type: 'join', channel: channel }));
+          setStatus(true);
+          log('Joined channel: ' + channel);
+        };
+
+        ws.onmessage = function (event) {
+          let data;
+          try {
+            data = JSON.parse(event.data);
+          } catch (e) {
+            log('Invalid message received');
+            return;
+          }
+
+          if (data.type === 'system') {
+            log('System: ' + data.message);
+            return;
+          }
+
+          if (data.type === 'message' && data.message) {
+            const cmd = data.message;
+            if (cmd.id && cmd.command) {
+              log('Command: ' + cmd.command);
+              // Forward command to plugin code.js
+              parent.postMessage({
+                pluginMessage: {
+                  type: 'execute-command',
+                  id: cmd.id,
+                  command: cmd.command,
+                  params: cmd.params || {},
+                },
+              }, '*');
+            }
+          }
+        };
+
+        ws.onclose = function () {
+          log('WebSocket disconnected');
+          setStatus(false);
+          ws = null;
+        };
+
+        ws.onerror = function (err) {
+          log('WebSocket error');
+          setStatus(false);
+        };
+      }
+
+      function doDisconnect() {
+        if (ws) {
+          ws.send(JSON.stringify({ type: 'leave', channel: channel }));
+          ws.close();
+          ws = null;
+        }
+        setStatus(false);
+        log('Disconnected');
+      }
+
+      // Receive responses from plugin code.js
+      window.onmessage = function (event) {
+        const msg = event.data.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type === 'command-result' || msg.type === 'command-error') {
+          if (ws && ws.readyState === WebSocket.OPEN && channel) {
+            ws.send(JSON.stringify({
+              type: 'message',
+              channel: channel,
+              message: {
+                id: msg.id,
+                result: msg.result,
+                error: msg.error,
+              },
+            }));
+            log('Response sent for: ' + msg.id.substring(0, 8) + '...');
+          }
+        }
+      };
+    </script>
+  </body>
+</html>
