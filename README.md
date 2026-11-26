@@ -106,3 +106,7 @@ through the plugin is checked manually in the Figma desktop app.
 
 The implementation plan, message protocols and design decisions are in
 [`docs/llm/figma-mcp-design.md`](docs/llm/figma-mcp-design.md) (Korean).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
